@@ -3,6 +3,7 @@
 #include "nvs_flash.h"
 #include "esp_wifi.h"
 #include "esp_now.h"
+#include "esp_sleep.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -29,18 +30,24 @@ void on_data_sent(const uint8_t *mac_addr, esp_now_send_status_t status) {
            status == ESP_NOW_SEND_SUCCESS ? "Thành công" : "Thất bại");
 }
 
+void enter_deep_sleep() {
+    printf("Chuyển sang chế độ Deep Sleep. Sẽ đánh thức sau 5 phút.\n");
+    esp_sleep_enable_timer_wakeup(300000000); // Đánh thức sau 5 phút (5 * 60 * 1000000 us)
+    esp_deep_sleep_start();
+}
+
 void sender_task(void *param) {
     sensor_data_t data;
     while (1) {
-        for (int i = 1; i <= 9; i++) { // Node ID từ 1 đến 9
+        for (int i = 1; i <= 9; i++) {
             generate_data(&data, i);
             esp_now_send(receiver_mac, (uint8_t *)&data, sizeof(data));
             printf("Gửi Node %d: Nhiệt độ=%.2f°C, Độ ẩm=%.2f%%, Thời gian=%s\n",
                    data.node_id, data.temperature, data.humidity, data.timestamp);
             vTaskDelay(pdMS_TO_TICKS(200)); // Giãn cách 200ms giữa các gói
         }
-        printf("Đã gửi xong dữ liệu từ tất cả các node. Chờ 1 phút để gửi tiếp...\n");
-        vTaskDelay(pdMS_TO_TICKS(60000)); // Gửi mỗi phút
+        printf("Đã gửi xong dữ liệu từ tất cả các node.\n");
+        enter_deep_sleep(); // Chuyển sang chế độ Deep Sleep
     }
 }
 
@@ -72,5 +79,5 @@ void app_main() {
     memcpy(peer_info.peer_addr, receiver_mac, 6);
     esp_now_add_peer(&peer_info);
 
-    xTaskCreate(sender_task, "sender_task", 4096, NULL, 5, NULL);
+    sender_task(NULL); // Gọi task gửi dữ liệu trực tiếp (vì Deep Sleep không cần loop task)
 }
